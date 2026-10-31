@@ -10,16 +10,18 @@
 #'   If col1 was ethnicity and col2 was gender you would get the count and rate of asians that are
 #'   male and female.
 #'
+#'   Only combinations that occur in the data are returned (no zero-count rows), and missing values
+#'   are treated as their own category.
+#'
 #' @param df   a data frame
 #' @param col1   a column from the data frame to be aggregated at the higher level.
 #' @param col2   a column from the data frame to be aggregated within col1.
 #' @param separate_tables a boolean that decides if you want all aggregations in one data frame
 #'   or split apart so each element of col1 gets it's own table; the default is FALSE
 #'
-#' @return returns a list containing frequency tables split by col1_string with counts and rates of
-#'         col2_string.
+#' @return returns a data frame (or a list of data frames if separate_tables is TRUE) split by
+#'   col1 with counts and rates of col2.
 #' @export
-#' @importFrom dplyr "%>%" as_data_frame group_by
 #'
 #' @examples
 #' # Sample data frame to demo the freq_two_vects function.
@@ -39,60 +41,51 @@
 
 freq_two_vects <- function(df, col1, col2, separate_tables = FALSE){
 
-  # To prevent NOTE from R CMD check 'no visible binding for global variable'
-  get.col1. = . = n = NULL
-
-  # Check that the df exists and is of type list.
-  if (!exists(deparse(substitute(df)))) return(stop('Data frame does not exist. Do not put df in quotes.'))
-  if (typeof(df) != 'list') {
-    type <- typeof(df)
-    err_message <- paste('df was of type "', type, '". Type "list" needed.', sep = '')
-    return(stop(err_message))
+  if (!is.data.frame(df)) {
+    stop('df must be a data frame, not an object of class "', class(df)[1], '".', call. = FALSE)
   }
 
-  # Check that the columns exist.
-  col1 <- deparse(substitute(col1))
-  col2 <- deparse(substitute(col2))
-  if (!(col1 %in% names(df))) return(stop(paste(col1, 'not in df. Do not put col1 in quotes.')))
-  if (!(col2 %in% names(df))) return(stop(paste(col2, 'not in df. Do not put col2 in quotes.')))
+  # Column names may be given bare (gender) or quoted ("gender").
+  col1 <- gsub('^["\']|["\']$', '', deparse(substitute(col1)))
+  col2 <- gsub('^["\']|["\']$', '', deparse(substitute(col2)))
+  if (!(col1 %in% names(df))) stop(col1, ' not in df.', call. = FALSE)
+  if (!(col2 %in% names(df))) stop(col2, ' not in df.', call. = FALSE)
+  if (identical(col1, col2)) stop('col1 and col2 must be different columns.', call. = FALSE)
 
-  if (!is.atomic(df[[col1]])) return(stop(paste(col1, 'is not an atomic vector.')))
-  if (!is.atomic(df[[col2]])) return(stop(paste(col2, 'is not an atomic vector.')))
+  a <- df[[col1]]
+  b <- df[[col2]]
+  if (!is.atomic(a)) stop(col1, ' is not an atomic vector.', call. = FALSE)
+  if (!is.atomic(b)) stop(col2, ' is not an atomic vector.', call. = FALSE)
 
-  # Check that separate_tables is logical
-  if (!is.logical(separate_tables) & !(separate_tables %in% c(0,1)))
-    return(stop('separate_tables was not logical. Need TRUE or FALSE'))
+  check_flag(separate_tables, 'separate_tables')
 
+  # Encode each value as its position among the uniques, combine the two codes into one key,
+  # and tabulate the keys. Work is O(n) and memory is proportional to the number of
+  # combinations that actually occur (xtabs allocated every possible cell).
+  ua <- unique(a)
+  ub <- unique(b)
+  ia <- match_incl_na(a, ua)
+  ib <- match_incl_na(b, ub)
+  key <- ia + (ib - 1) * length(ua)            # double, so no integer overflow
 
-  result <- with(df, xtabs(~get(col1) + get(col2))) %>%
-    dplyr::as_data_frame(.) %>%
-    dplyr::group_by(get.col1.) %>%
-    dplyr::mutate(Percentage = round(n * 100 / sum(n), 1)) %>%
-    dplyr::ungroup() %>%
-    dplyr::arrange(get.col1.)
+  ukey  <- unique(key)
+  first <- match(ukey, key)                    # a representative row for each combination
+  n     <- tabulate(match(key, ukey), nbins = length(ukey))
 
-  # Converts the result vector class to match original vector class. This prevents
-  #  numbers and dates from being converted to characters so they can be sorted as intended.
-  tryCatch({
-    result[,1] <- eval(parse(text = paste('as.', class(df[[col1]])[1], '(result$get.col1.)', sep = '')))
-  }, error = function(e) {
-    print('Unable to convert col1 to original class.')
-  })
-  tryCatch({
-    result[,2] <- eval(parse(text = paste('as.', class(df[[col2]])[1], '(result$get.col2.)', sep = '')))
-  }, error = function(e) {
-    print('Unable to convert col2 to original class.')
-  })
+  v1 <- a[first]
+  v2 <- b[first]
+  group_total <- tabulate(ia, nbins = length(ua))[ia[first]]
 
-
-
+  result <- data.frame(v1, v2, n, round(n * 100 / group_total, 1), stringsAsFactors = FALSE)
   colnames(result) <- c(col1, col2, 'Count', 'Percentage')
-  result <- dplyr::arrange_(result, col1, 'desc(Count)')
+
+  # Order by col1, then largest Count first, then col2 to break ties deterministically.
+  result <- result[order(v1, -n, v2), , drop = FALSE]
+  rownames(result) <- NULL
 
   if (separate_tables) {
-    result <- split(result, result[[col1]])
-    return(result)
-  } else {
-    return(result)
+    tables <- split(result, result[[col1]])
+    return(lapply(tables, function(d) { rownames(d) <- NULL; d }))
   }
+  result
 }

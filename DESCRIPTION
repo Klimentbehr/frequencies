@@ -1,7 +1,7 @@
 Package: frequencies
 Type: Package
 Title: Create Frequency Tables with Counts and Rates
-Version: 0.1.1
+Version: 0.2.0
 Authors@R: c(person("Nathan", "Trenholm", role = c("aut", "cre"),
                      email = "nathan@DataInsightPartners.com"))
 Author: Nathan Trenholm [aut, cre]
@@ -11,10 +11,8 @@ BugReports: https://github.com/DataInsightPartners/frequencies/issues
 Description: Provides functions to create frequency tables which display both counts
     and rates.
 Depends: R (>= 3.4.0)
-Imports:
-  dplyr (>= 0.5.0)
 License: GPL-3
-LazyData: TRUE
-RoxygenNote: 6.0.1
-Suggests: testthat
-
+Suggests: testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.1
+Encoding: UTF-8

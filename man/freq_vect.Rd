@@ -4,17 +4,28 @@
 \alias{freq_vect}
 \title{freq_vect}
 \usage{
-freq_vect(data_vector, sort_by_count = FALSE, total_row = TRUE)
+freq_vect(
+  data_vector,
+  sort_by_count = FALSE,
+  total_row = TRUE,
+  include_na = TRUE
+)
 }
 \arguments{
 \item{data_vector}{an atomic vector of type character, integer, double, or logical}
 
 \item{sort_by_count}{boolean value that determines if output will be sorted by count or name}
 
-\item{total_row}{a boolean value that determines if the output will have a summary row appended}
+\item{total_row}{a boolean value that determines if the output will have a summary row appended.
+The summary row's first column is the character string "Total"; the Count, Percentage and
+Cum. columns remain numeric.}
+
+\item{include_na}{a boolean value that determines if missing values (NA) are shown as their
+own row (the default) or dropped before percentages are computed.}
 }
 \value{
-a data_frame containing the counts and percentages of each value from the provided data
+a data.frame containing the counts and percentages of each value from the provided data.
+  Cum. is calculated from the unrounded counts so it always ends at exactly 100.
 }
 \description{
 freq_vect returns a frequency table with counts and percentages of values

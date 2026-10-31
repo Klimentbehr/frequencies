@@ -5,11 +5,15 @@
 #'
 #' @param data_vector   an atomic vector of type character, integer, double, or logical
 #' @param sort_by_count   boolean value that determines if output will be sorted by count or name
-#' @param total_row   a boolean value that determines if the output will have a summary row appended
+#' @param total_row   a boolean value that determines if the output will have a summary row appended.
+#'   The summary row's first column is the character string "Total"; the Count, Percentage and
+#'   Cum. columns remain numeric.
+#' @param include_na   a boolean value that determines if missing values (NA) are shown as their
+#'   own row (the default) or dropped before percentages are computed.
 #'
-#' @return a data_frame containing the counts and percentages of each value from the provided data
+#' @return a data.frame containing the counts and percentages of each value from the provided data.
+#'   Cum. is calculated from the unrounded counts so it always ends at exactly 100.
 #' @export
-#' @importFrom dplyr "%>%"
 #'
 #' @examples
 #' # Sample vector and data frame to demo the freq_vect function.
@@ -26,50 +30,67 @@
 #' freq_vect(tbl$letters, sort_by_count = TRUE, total_row = FALSE)
 #' freq_vect(mtcars$cyl)
 
-freq_vect <- function(data_vector, sort_by_count = FALSE, total_row = TRUE) {
+freq_vect <- function(data_vector, sort_by_count = FALSE, total_row = TRUE, include_na = TRUE) {
 
-  # To prevent NOTE from R CMD check 'no visible binding for global variable'
-  data = n = total = Percentage = Cum. = NULL
+  if (!is.atomic(data_vector)) stop('freq_vect requires an atomic vector.')
 
-  # Check validity of data_vector argument. The argument needs to be a string and the data frame needs to exist.
-  if (!is.atomic(data_vector)) return(stop('freq_vect requires an atomic vector.'))
-
-  if (!(typeof(data_vector) %in% c('logical', 'integer', 'double','character'))) {
-    return(stop('Vector not of acceptable data type. Needs to be of type logical, integer, double, or character.'))
+  if (!(typeof(data_vector) %in% c('logical', 'integer', 'double', 'character'))) {
+    stop('Vector not of acceptable data type. Needs to be of type logical, integer, double, or character.')
   }
 
-  if (length(data_vector) < 2) return(stop('Vector needs a length greater than 1.'))
+  if (length(data_vector) < 1) stop('Vector needs a length of at least 1.')
 
+  check_flag(sort_by_count, 'sort_by_count')
+  check_flag(total_row, 'total_row')
+  check_flag(include_na, 'include_na')
 
-  # Check if sort_by_count is set.
-  if (!is.logical(sort_by_count)) sort_by_count <- TRUE
-  sort_by <- ifelse(sort_by_count, 'desc(n)', 'data')
+  if (!include_na) {
+    data_vector <- data_vector[!is.na(data_vector)]
+    if (length(data_vector) < 1) stop('Vector contains only missing values.')
+  }
 
-  df <- data.frame(data = data_vector, stringsAsFactors = FALSE)
+  # Single pass over the data: unique values, then a tabulate of their positions.
+  # This is O(n), keeps the original type (dates, ints, ...) and never builds a
+  # cross-tab matrix like xtabs/table would. match() does not treat two NAs as
+  # equal, so missing values need a dedicated index or they disappear.
+  values <- unique(data_vector)
+  n      <- tabulate(match_incl_na(data_vector, values), nbins = length(values))
+  total  <- sum(n)
 
-  result <- dplyr::count(df, data) %>%
-    dplyr::mutate(total = sum(n)) %>%
-    dplyr::group_by(data) %>%
-    dplyr::mutate(Percentage = round(n * 100 / total, 1)) %>%
-    dplyr::ungroup() %>%
-    dplyr::arrange_(sort_by) %>%
-    dplyr::mutate(Cum. = cumsum(Percentage)) %>%
-    dplyr::select(data,
-                   Count = n,
-                   Percentage,
-                   Cum.)
+  ord <- if (sort_by_count) order(-n, values) else order(values)
+  values <- values[ord]
+  n      <- n[ord]
 
+  result <- data.frame(data       = values,
+                       Count      = n,
+                       Percentage = round(n * 100 / total, 1),
+                       Cum.       = round(cumsum(n) * 100 / total, 1),
+                       stringsAsFactors = FALSE)
 
-  if (!is.logical(total_row)) total_row <- TRUE
   if (total_row) {
-    result[,1] <- lapply(result[,1], as.character)
-    result <- rbind.data.frame(result,c('Total', sum(result$Count), 100, 100))
+    result$data <- as.character(result$data)
+    result <- rbind(result,
+                    data.frame(data = 'Total', Count = total, Percentage = 100, Cum. = 100,
+                               stringsAsFactors = FALSE))
   }
 
-  return(result)
+  rownames(result) <- NULL
+  result
 }
 
+# Shared argument validation: a single non-missing TRUE/FALSE.
+check_flag <- function(x, name) {
+  if (!(is.logical(x) && length(x) == 1L && !is.na(x))) {
+    stop(name, ' was not logical. Need TRUE or FALSE', call. = FALSE)
+  }
+  invisible(TRUE)
+}
 
-
-
-
+# match() returns NA for NA, so tabulate() would drop missing values. Point those
+# rows at the NA slot in `table` instead.
+match_incl_na <- function(x, table) {
+  idx <- match(x, table)
+  na_level <- which(is.na(table))[1L]
+  if (!is.na(na_level)) idx[is.na(x)] <- na_level
+  idx
+}

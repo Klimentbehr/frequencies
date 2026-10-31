@@ -1,6 +1,6 @@
 library(frequencies)
-context("freq_two_vects")
-set.seed(1)
+# Golden values were generated with the pre-R-3.6 sampler; pin it so they stay reproducible.
+suppressWarnings(set.seed(1, sample.kind = 'Rounding'))
 tbl <<- data.frame(numbers = sample(1:3, 200, replace = TRUE),
                    letters = sample(letters[1:3], 200, replace = TRUE),
                    dates = sample(seq(as.Date('1999/10/01'), as.Date('1999/10/03'), by = "day"),
@@ -8,14 +8,57 @@ tbl <<- data.frame(numbers = sample(1:3, 200, replace = TRUE),
                    logicals = sample(c(TRUE, FALSE), 200, replace = TRUE),
                    stringsAsFactors = FALSE)
 
-test_that("data exists",{
-  expect_error(freq_two_vects(nonexistant, nonexistant), "Data frame does not exist. Do not put df in quotes.")
-  expect_error(freq_two_vects(tbl, nonexistant), "nonexistant not in df. Do not put col1 in quotes.")
-  expect_error(freq_two_vects('tbl', nonexistant), "Data frame does not exist. Do not put df in quotes.")
-  expect_error(freq_two_vects(tbl, 'numbers'), '"numbers" not in df. Do not put col1 in quotes.')
-  expect_error(freq_two_vects(data.frame, nonexistant), 'df was of type "closure". Type "list" needed.')
+test_that("invalid input is rejected with clear errors", {
+  expect_error(freq_two_vects(nonexistant, nonexistant), "nonexistant")
+  expect_error(freq_two_vects(tbl, nonexistant, numbers), "nonexistant not in df.")
+  expect_error(freq_two_vects(tbl, numbers, nonexistant), "nonexistant not in df.")
+  expect_error(freq_two_vects('tbl', numbers, letters), 'df must be a data frame, not an object of class "character"')
+  expect_error(freq_two_vects(data.frame, numbers, letters), 'df must be a data frame')
+  expect_error(freq_two_vects(list(a = 1, b = 2), a, b), 'df must be a data frame')
+  expect_error(freq_two_vects(tbl, numbers, numbers), 'must be different')
+  expect_error(freq_two_vects(tbl, numbers, letters, separate_tables = 'yes'), 'separate_tables was not logical')
+  expect_error(freq_two_vects(tbl, numbers, letters, separate_tables = NA), 'separate_tables was not logical')
 })
 
+test_that("quoted column names work and df can be an expression", {
+  expect_equal(freq_two_vects(tbl, "numbers", "letters"), freq_two_vects(tbl, numbers, letters))
+  # The old exists() check rejected anything that was not a bare object name.
+  expect_equal(nrow(freq_two_vects(tbl[tbl$numbers == 1, ], numbers, letters)), 3)
+  expect_silent(freq_two_vects(head(tbl, 50), numbers, letters))
+})
+
+test_that("percentages within each col1 value sum to 100 and counts sum to nrow", {
+  res <- freq_two_vects(tbl, letters, dates)
+  expect_equal(sum(res$Count), nrow(tbl))
+  sums <- tapply(res$Percentage, res$letters, sum)
+  expect_true(all(abs(sums - 100) < 0.5))   # rounding to 1 dp per row
+})
+
+test_that("missing values are their own category", {
+  d <- data.frame(g = c('a', 'a', 'a', NA, NA), s = c('x', NA, 'x', 'y', 'y'), stringsAsFactors = FALSE)
+  res <- freq_two_vects(d, g, s)
+  expect_equal(sum(res$Count), 5)
+  expect_equal(res$Count[is.na(res$g)], 2)
+  expect_equal(res$Percentage[is.na(res$g)], 100)
+  expect_equal(res$Count[res$g %in% 'a' & is.na(res$s)], 1)
+})
+
+test_that("factors and sparse combinations are handled without zero rows", {
+  d <- data.frame(a = factor(c('lo', 'hi', 'hi', 'lo'), levels = c('lo', 'hi')),
+                  b = c('p', 'q', 'q', 'p'), stringsAsFactors = FALSE)
+  res <- freq_two_vects(d, a, b)
+  expect_equal(nrow(res), 2)                # only observed combinations
+  expect_equal(as.character(res$a), c('lo', 'hi'))  # factor level order respected
+})
+
+test_that("large input runs quickly", {
+  set.seed(2)
+  big <- data.frame(school = sample(1:500, 5e5, replace = TRUE),
+                    ethnicity = sample(letters[1:7], 5e5, replace = TRUE))
+  elapsed <- system.time(res <- freq_two_vects(big, school, ethnicity))[['elapsed']]
+  expect_equal(sum(res$Count), 5e5)
+  expect_lt(elapsed, 5)
+})
 check_numbers_letters_f <- data.frame(numbers = c(1L, 1L, 1L, 2L, 2L),
                                       letters = c('a', 'b', 'c', 'a', 'c'),
                                       Count   = c(25L, 21L, 10L, 28L, 27L),

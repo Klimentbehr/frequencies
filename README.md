@@ -1,5 +1,5 @@
-# frequencies 
-[![Travis-CI Build Status](https://travis-ci.org/DataInsightPartners/frequencies.svg?branch=master)](https://travis-ci.org/DataInsightPartners/frequencies)  
+# frequencies
+[![R-CMD-check](https://github.com/DataInsightPartners/frequencies/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/DataInsightPartners/frequencies/actions/workflows/R-CMD-check.yaml)
 
 Overview
 --------  
@@ -127,3 +127,21 @@ As you can see you have the ability to look at just a single table by element re
 freq_two_vects(test_results, ethnicity, status, separate_tables = TRUE)$`African American`
 ```
 ![two_vects reference](img/two_vects_reference.png)
+
+
+Testing
+-------
+
+The package has a [testthat](https://testthat.r-lib.org/) suite in `tests/testthat/` that covers
+correctness, edge cases (NA values, factors, single values, bad arguments) and a performance guard.
+
+```r
+# From the package root, in R:
+devtools::test()
+
+# Or run the full CRAN-style check:
+devtools::check()
+```
+
+From a terminal: `Rscript -e "devtools::test()"`. The same checks run on Linux, Windows and macOS
+through GitHub Actions (`.github/workflows/R-CMD-check.yaml`) on every push and pull request.

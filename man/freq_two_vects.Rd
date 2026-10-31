@@ -17,8 +17,8 @@ freq_two_vects(df, col1, col2, separate_tables = FALSE)
 or split apart so each element of col1 gets it's own table; the default is FALSE}
 }
 \value{
-returns a list containing frequency tables split by col1_string with counts and rates of
-        col2_string.
+returns a data frame (or a list of data frames if separate_tables is TRUE) split by
+  col1 with counts and rates of col2.
 }
 \description{
 freq_two_vects takes two columns from a data frame and returns a data frame containing frequency
@@ -29,8 +29,11 @@ freq_two_vects takes two columns from a data frame and returns a data frame cont
 As an example, if col1 was gender and col2 was ethnicity you would get the count and rate of
   males that are asian, african american, hispanic, etc.
 
-If col1 was ethnicity and col2 was gender you would get the count and rate of asians that are
+  If col1 was ethnicity and col2 was gender you would get the count and rate of asians that are
   male and female.
+
+  Only combinations that occur in the data are returned (no zero-count rows), and missing values
+  are treated as their own category.
 }
 \examples{
 # Sample data frame to demo the freq_two_vects function.

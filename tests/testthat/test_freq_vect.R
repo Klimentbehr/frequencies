@@ -1,6 +1,18 @@
 library(frequencies)
-context("freq_vect")
-set.seed(1)
+
+# The total row used to coerce every column to character. Counts and percentages are now numeric,
+# so convert the old character expectations.
+reset_rows <- function(x) {
+  rownames(x) <- NULL
+  x
+}
+
+num_total <- function(x) {
+  x[2:4] <- lapply(x[2:4], as.numeric)
+  x
+}
+# Golden values were generated with the pre-R-3.6 sampler; pin it so they stay reproducible.
+suppressWarnings(set.seed(1, sample.kind = 'Rounding'))
 tbl <<- data.frame(numbers = sample(1:10, 200, replace = TRUE),
                    letters = sample(letters, 200, replace = TRUE),
                    dates = sample(seq(as.Date('1999/10/01'), as.Date('2000/01/01'), by = "day"),
@@ -10,7 +22,7 @@ tbl <<- data.frame(numbers = sample(1:10, 200, replace = TRUE),
 
 test_that("data exists",{
   expect_error(freq_vect(nonexistant), "object 'nonexistant' not found")
-  expect_error(freq_vect('nonexistant'), "Vector needs a length greater than 1.")
+  expect_error(freq_vect(character(0)), "Vector needs a length of at least 1.")
   expect_error(freq_vect(list(c('character', 1L))), "freq_vect requires an atomic vector.")
 })
 
@@ -48,8 +60,8 @@ check_numbers_tf <- data.frame(data =    c(8L, 5L, 4L, 3L, 7L, 9L, 6L, 2L, 10L, 
 
 test_that('numbers aggregations are correct', {
   expect_equal(freq_vect(tbl$numbers, FALSE, FALSE), check_numbers_ff)
-  expect_equal(freq_vect(tbl$numbers, FALSE, TRUE),  check_numbers_ft)
-  expect_equal(freq_vect(tbl$numbers, TRUE, TRUE),   check_numbers_tt)
+  expect_equal(freq_vect(tbl$numbers, FALSE, TRUE),  num_total(check_numbers_ft))
+  expect_equal(freq_vect(tbl$numbers, TRUE, TRUE),   num_total(check_numbers_tt))
   expect_equal(freq_vect(tbl$numbers, TRUE, FALSE),  check_numbers_tf)
 
 })
@@ -90,8 +102,8 @@ check_letters_tf <- data.frame(data =    c('e', 'd', 'j', 'm', 'y', 'g', 'c', 'i
 
 test_that('letters aggregations are correct', {
   expect_equal(freq_vect(tbl$letters, FALSE, FALSE)[1:10,],      check_letters_ff)
-  expect_equal(freq_vect(tbl$letters, FALSE, TRUE)[c(1:10,27),], check_letters_ft)
-  expect_equal(freq_vect(tbl$letters, TRUE, TRUE)[c(1:10,27),],  check_letters_tt)
+  expect_equal(reset_rows(freq_vect(tbl$letters, FALSE, TRUE)[c(1:10,27),]), num_total(check_letters_ft))
+  expect_equal(reset_rows(freq_vect(tbl$letters, TRUE, TRUE)[c(1:10,27),]),  num_total(check_letters_tt))
   expect_equal(freq_vect(tbl$letters, TRUE, FALSE)[1:10,],       check_letters_tf)
 })
 
@@ -135,8 +147,8 @@ check_dates_tf <- data.frame(data =    as.Date(c('1999-11-30', '1999-12-27', '19
 
 test_that('dates aggregations are correct', {
   expect_equal(freq_vect(tbl$dates, FALSE, FALSE)[1:10,],      check_dates_ff)
-  expect_equal(freq_vect(tbl$dates, FALSE, TRUE)[c(1:10,85),], check_dates_ft)
-  expect_equal(freq_vect(tbl$dates, TRUE, TRUE)[c(1:10,85),],  check_dates_tt)
+  expect_equal(reset_rows(freq_vect(tbl$dates, FALSE, TRUE)[c(1:10,85),]), num_total(check_dates_ft))
+  expect_equal(reset_rows(freq_vect(tbl$dates, TRUE, TRUE)[c(1:10,85),]),  num_total(check_dates_tt))
   expect_equal(freq_vect(tbl$dates, TRUE, FALSE)[1:10,],       check_dates_tf)
 })
 
@@ -165,8 +177,48 @@ check_logicals_tf <- data.frame(data = c(FALSE, TRUE),
 
 test_that('logicals aggregations are correct', {
   expect_equal(freq_vect(tbl$logicals, FALSE, FALSE), check_logicals_ff)
-  expect_equal(freq_vect(tbl$logicals, FALSE, TRUE),  check_logicals_ft)
-  expect_equal(freq_vect(tbl$logicals, TRUE, TRUE),   check_logicals_tt)
+  expect_equal(freq_vect(tbl$logicals, FALSE, TRUE),  num_total(check_logicals_ft))
+  expect_equal(freq_vect(tbl$logicals, TRUE, TRUE),   num_total(check_logicals_tt))
   expect_equal(freq_vect(tbl$logicals, TRUE, FALSE),  check_logicals_tf)
 })
 
+
+test_that('Cum. always ends at exactly 100 and total row stays numeric', {
+  set.seed(3)
+  x <- sample(letters, 997, replace = TRUE)       # 997 is prime: rounding drift is likely
+  res <- freq_vect(x, total_row = FALSE)
+  expect_equal(res$Cum.[nrow(res)], 100)
+  with_total <- freq_vect(x)
+  expect_type(with_total$Count, 'integer')
+  expect_type(with_total$Percentage, 'double')
+  expect_equal(with_total$Count[nrow(with_total)], 997L)
+})
+
+test_that('missing values are counted by default and can be dropped', {
+  x <- c('a', 'b', NA, 'a', NA)
+  res <- freq_vect(x, total_row = FALSE)
+  expect_equal(res$Count[is.na(res$data)], 2L)
+  dropped <- freq_vect(x, total_row = FALSE, include_na = FALSE)
+  expect_equal(sum(dropped$Count), 3L)
+  expect_equal(dropped$Cum.[2], 100)
+  expect_error(freq_vect(c(NA, NA), include_na = FALSE), 'only missing values')
+})
+
+test_that('single values and bad flags are handled', {
+  expect_equal(freq_vect('a', total_row = FALSE)$Count, 1L)
+  expect_error(freq_vect(1:3, sort_by_count = 'yes'), 'sort_by_count was not logical')
+  expect_error(freq_vect(1:3, total_row = NA), 'total_row was not logical')
+})
+
+test_that('ties in sort_by_count are broken by value', {
+  res <- freq_vect(c('b', 'a', 'c', 'c'), sort_by_count = TRUE, total_row = FALSE)
+  expect_equal(res$data, c('c', 'a', 'b'))
+})
+
+test_that('large input runs quickly', {
+  set.seed(4)
+  big <- sample(1:1000, 2e6, replace = TRUE)
+  elapsed <- system.time(res <- freq_vect(big))[['elapsed']]
+  expect_equal(res$Count[nrow(res)], 2e6)
+  expect_lt(elapsed, 5)
+})
